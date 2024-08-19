@@ -1,0 +1,147 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import plotly.express as px
+import seaborn as sns
+from jupyter_dash import JupyterDash
+from dash import dcc, html
+from dash.dependencies import Input, Output
+from statsmodels.tsa.seasonal import seasonal_decompose
+from scipy import stats
+
+plt.style.use("seaborn-dark-palette")
+
+def oil_and_gas_eda(file_path):
+    # Load the dataset
+    df = pd.read_csv(file_path)
+    
+    # Display the first few rows
+    print(df.head())
+    
+    # Display the shape of the dataframe
+    print(f"Data shape: {df.shape}")
+    
+    # Summary statistics
+    print(df.describe())
+    
+    # Data information
+    df.info()
+    
+    # Visualizing Stock Trading Data
+    for y in ["Open", "High", "Volume"]:
+        fig = px.histogram(df, x="Date", y=y, color="Symbol",
+                           color_discrete_sequence=px.colors.qualitative.Set2,
+                           title=f"Total Trading {y} Distribution of Major US Oil Companies")
+        fig.update_layout(template="plotly_dark", font=dict(family="PT Sans", size=18))
+        fig.show()
+    
+    # Visualizing All Attributes Together
+    df.plot(subplots=True, figsize=(12, 12), linewidth=1.5)
+    plt.title("US Oil and Gas Stock Attributes")
+    plt.show()
+    
+    # Volume Trend Visualization
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.bar(df["Date"], df["Volume"])
+    ax.xaxis.set_major_locator(plt.MaxNLocator(15))
+    ax.set_xlabel("Date", fontsize=5)
+    ax.set_ylabel("Volume", fontsize=5)
+    plt.title('Volume Trend', fontsize=20)
+    plt.grid()
+    plt.show()
+    
+    # Moving Averages
+    df["MA for 20 days"] = df["Open"].rolling(20).mean()
+    df["MA for 50 days"] = df["Open"].rolling(50).mean()
+    df.truncate(before="2010-01-01", after="2022-06-10")[["Close", "MA for 20 days", "MA for 50 days"]].plot(subplots=False, figsize=(12, 6), linewidth=2)
+    plt.grid()
+    plt.show()
+    
+    # Distribution of Opening Prices
+    sns.distplot(df["Open"], color="#FFD500")
+    plt.title("Distribution of open prices of US Oil and Gas stocks", fontweight="bold", fontsize=20)
+    plt.xlabel("Open Price", fontsize=10)
+    plt.show()
+    
+    # Summary Statistics
+    print("Maximum open price of stock ever obtained:", df["Open"].max())
+    print("Minimum open price of stock ever obtained:", df["Open"].min())
+    
+    # Missing Data Handling
+    missing_data = df.isnull().sum()
+    print(missing_data)
+    
+    # Visualize missing data
+    sns.heatmap(df.isnull(), cbar=False, cmap="viridis")
+    plt.show()
+    
+    # Drop rows with missing values
+    df_cleaned = df.dropna()
+    
+    # Correlation Analysis
+    corr_matrix = df.corr()
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", linewidths=0.5)
+    plt.title("Correlation Matrix of Stock Attributes", fontsize=18)
+    plt.show()
+    
+    # Time Series Analysis
+    decomposed = seasonal_decompose(df['Close'], model='multiplicative', period=365)
+    decomposed.plot()
+    plt.suptitle('Time Series Decomposition of Close Price', fontsize=18)
+    plt.show()
+    
+    # Comparison of Companies
+    fig = px.line(df, x="Date", y="Close", color="Symbol", title="Closing Price Trends of Major US Oil Companies")
+    fig.update_layout(template="plotly_dark", font=dict(family="PT Sans", size=18))
+    fig.show()
+    
+    plt.figure(figsize=(12, 6))
+    sns.boxplot(x="Symbol", y="Close", data=df)
+    plt.title("Volatility Comparison of Closing Prices", fontsize=18)
+    plt.show()
+    
+    # Outlier Detection
+    plt.figure(figsize=(12, 6))
+    sns.boxplot(data=df[['Open', 'High', 'Low', 'Close', 'Volume']])
+    plt.title('Outlier Detection in Stock Attributes', fontsize=18)
+    plt.show()
+    
+    z_scores = np.abs(stats.zscore(df[['Open', 'High', 'Low', 'Close', 'Volume']]))
+
+    # Outliers based on Z-scores
+    outliers = np.where(z_scores > 3)
+    print(f"Outliers Detected:\n{outliers}")
+    
+    # Interactive Dash App
+    app = JupyterDash(__name__)
+    
+    app.layout = html.Div([
+        dcc.Graph(id='price-time-series'),
+        dcc.Dropdown(
+            id='company-selector',
+            options=[{'label': symbol, 'value': symbol} for symbol in df['Symbol'].unique()],
+            value='XOM',
+            multi=True
+        )
+    ])
+    
+    @app.callback(
+        Output('price-time-series', 'figure'),
+        Input('company-selector', 'value')
+    )
+    def update_graph(selected_symbols):
+        if isinstance(selected_symbols, str):
+            selected_symbols = [selected_symbols]
+        
+        filtered_df = df[df['Symbol'].isin(selected_symbols)]
+        fig = px.line(filtered_df, x='Date', y='Close', color='Symbol')
+        return fig
+    
+    app.run_server(mode='inline', port=8080)
+
+# Example usage:
+file_path = r"C:\Users\User\Documents\IRON HACK DA 2024\IH-Labs W8\Final-Project\Data\Raw data\oil and gas stock prices.csv"
+oil_and_gas_eda(file_path)
